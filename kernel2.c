@@ -300,9 +300,9 @@ void clockFunction() {
 	while(1) {
 		if(!isEmpty(&readyList)) {
 			Process p = processes[head(&readyList)].p;
-			ioTransfer(p, 0);
+			iotransfer(p, 0);
 		}
-		else ioTransfer(processes[idleIndex].p, 0);
+		else iotransfer(processes[idleIndex].p, 0);
 		int q = removeHead(&readyList);
 		addLast(&readyList, q);
 	}
@@ -319,10 +319,11 @@ void sleep(int time) {
 
 void waitInterrupt(int peripherique) {
 	int elem = removeHead(&readyList);
+	Process p;
 	if(!isEmpty(&readyList))
-		Process p = processes[head(&readyList)].p;
+		p = processes[head(&readyList)].p;
 	else
-		Process p = processes[idleIndex].p;
-	ioTransfer(p, peripherique);
+		p = processes[idleIndex].p;
+	iotransfer(p, peripherique);
 	addFirst(&readyList, elem);
 }
