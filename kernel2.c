@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include "system_m.h"
 #include "interrupt.h"
 #include "kernel2.h"
@@ -25,7 +26,9 @@ typedef struct {
 	Process p;
 	int currentMonitor;			/* points to the monitors array */
 	int monitors[MAX_MONITORS + 1]; /* used for nested calls; monitors[0] is always -1 */
-} ProcessDescriptor;
+	int notified; // flag that tracks whether the process has been notified or not. Initial value 0
+	int counter; // -1 if inactive, 0 if active and counting
+} ProcessDescriptor; 
 
 typedef struct {
 	int timesTaken;
@@ -97,6 +100,10 @@ static int isEmpty(int* list) {
 	return *list < 0;
 }
 
+static int removeProc(int* list, int proc) {
+
+}
+
 /***********************************************************
  ***********************************************************
                     Kernel functions
@@ -117,6 +124,8 @@ void createProcess (void (*f)(), int stackSize) {
 	processes[nextProcessId].next = -1;
 	processes[nextProcessId].currentMonitor = 0;
 	processes[nextProcessId].monitors[0] = -1;
+	processes[nextProcessId].notified = 0;
+	processes[nextProcessId].counter = -1;
 
 	addLast(&readyList, nextProcessId);
 	nextProcessId++;
@@ -226,6 +235,7 @@ void wait() {
 	int myID = head(&readyList);
 	int myMonitor = getCurrentMonitor(myID);
 	int myTaken;
+	processes[myID].notified = 0;
 
 	if (myMonitor < 0) {
 		ERRA("Process %d called wait outside of a monitor.", myID);
@@ -266,11 +276,12 @@ void notify() {
 
 	if (myMonitor < 0) {
 		ERRA("Process %d called notify outside of a monitor.", myID);
-		exit(1);
-	}
+		exit(1)
+;	}
 
 	if (!isEmpty(&(monitors[myMonitor].waitingList))) {
 		int pid = removeHead(&monitors[myMonitor].waitingList);
+		processes[pid].notified = 1;
 		addLast(&monitors[myMonitor].entryList, pid);
 	}
 }
@@ -286,6 +297,7 @@ void notifyAll() {
 
 	while (!isEmpty(&(monitors[myMonitor].waitingList))) {
 		int pid = removeHead(&monitors[myMonitor].waitingList);
+		processes[pid].notified = 1;
 		addLast(&monitors[myMonitor].entryList, pid);
 	}
 }
@@ -310,7 +322,33 @@ void clockFunction() {
 
 
 int timedWait(int msec) {
+	maskInterrupts();
+	/*activer compteur*/
+	
+	if(msec < 0) {
+		ERR("Negative time given in timedWait");
+		exit(1);
+	}
 
+	int myID = head(&readyList);
+	int myMonitor = getCurrentMonitor();
+	processes[myID].notified = 0;
+
+	if(msec == 0) wait();
+	else {
+		unsigned double left = (double) msec / 1000.0;
+		wait();
+		while((left > 0) && (!processes[myID].notified)) {
+			left = sleep(left);
+		}
+		if(processes[myID].notified == 1) {
+			return 1;
+		} else {
+
+		}
+	}
+	/*FAUX: utiliser iotransfer() de clockFunction (1/msec) pour incrémenter
+	compteurs de processus qui sont actifs (à 0)*/
 }
 
 void sleep(int time) {
@@ -326,5 +364,4 @@ void waitInterrupt(int peripherique) {
 		p = processes[idleIndex].p;
 	iotransfer(p, peripherique);
 	addFirst(&readyList, elem);
-    //test comment
 }
