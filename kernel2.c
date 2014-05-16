@@ -13,7 +13,11 @@
 #define ERRA(text, ...) fprintf(stderr, "[%d] Error: " text "\n", head(&readyList), __VA_ARGS__)
 #define ERR(text) ERRA(text, 0)
 
+#define STACK_SIZE 10000
+
 void idleFunction();
+
+void clockFunction();
 
 /************* Data structures **************/
 typedef struct {
@@ -42,6 +46,9 @@ static int nextProcessId = 0;
 /* List of monitor descriptors */
 MonitorDescriptor monitors[MAX_MONITORS];
 static int nextMonitorId = 0;
+
+static int idleIndex;
+static int clockIndex;
 
 /*************** Functions for process list manipulation **********/
 
@@ -128,9 +135,11 @@ void start(){
 	DPRINT("Starting kernel...");
 	if(isEmpty(&readyList))
 		printf("ERROR: readyList is empty.");
-	Process idle = createProcess(idleFunction, 0);
-
-	checkAndTransfer();
+	idleIndex = nextProcessId;
+	createProcess(idleFunction, STACK_SIZE);
+	clockIndex = nextProcessId;
+	createProcess(clockFunction, STACK_SIZE);
+	transfer(processes[clockIndex].p);
 }
 
 void yield(){
@@ -285,6 +294,20 @@ void idleFunction() {
 	while(1){}
 }
 
+void clockFunction() {
+	maskInterrupts();
+	init_clock();
+	while(1) {
+		if(!isEmpty(&readyList)) {
+			Process p = processes[head(&readyList)].p;
+			ioTransfer(p, 0);
+		}
+		else ioTransfer(processes[idleIndex].p, 0);
+		int q = removeHead(&readyList);
+		addLast(&readyList, q);
+	}
+}
+
 
 int timedWait(int msec) {
 
@@ -299,7 +322,7 @@ void waitInterrupt(int peripherique) {
 	if(!isEmpty(&readyList))
 		Process p = processes[head(&readyList)].p;
 	else
-		Process p = idle;
+		Process p = processes[idleIndex].p;
 	ioTransfer(p, peripherique);
 	addFirst(&readyList, elem);
 }
