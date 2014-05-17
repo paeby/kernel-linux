@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
 #include "system_m.h"
 #include "interrupt.h"
 #include "kernel2.h"
@@ -138,6 +137,14 @@ static void checkAndTransfer() {
 	}
 	Process process = processes[head(&readyList)].p;
 	transfer(process);
+}
+
+void checkAndIncrement() {
+	for(int i = 0; i < nextProcessId - 3; i++) { //-next -clock -idle
+		if(processes[i].counter >= 0) {
+			processes[i].counter++;
+		}
+	}
 }
 
 void start(){
@@ -313,6 +320,7 @@ void clockFunction() {
 		if(!isEmpty(&readyList)) {
 			Process p = processes[head(&readyList)].p;
 			iotransfer(p, 0);
+			checkAndIncrement();
 		}
 		else iotransfer(processes[idleIndex].p, 0);
 		int q = removeHead(&readyList);
@@ -323,6 +331,8 @@ void clockFunction() {
 
 int timedWait(int msec) {
 	maskInterrupts();
+	int myID = head(&readyList);
+	processes[head(&readyList)].counter = 0;
 	/*activer compteur*/
 	
 	if(msec < 0) {
@@ -330,16 +340,15 @@ int timedWait(int msec) {
 		exit(1);
 	}
 
-	int myID = head(&readyList);
 	int myMonitor = getCurrentMonitor();
 	processes[myID].notified = 0;
-
 	if(msec == 0) wait();
 	else {
 		unsigned double left = (double) msec / 1000.0;
 		wait();
-		while((left > 0) && (!processes[myID].notified)) {
-			left = sleep(left);
+		while((processes[myID].counter > 0) && (!processes[myID].notified)) {
+			//???????
+			//
 		}
 		if(processes[myID].notified == 1) {
 			return 1;
