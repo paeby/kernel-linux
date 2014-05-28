@@ -141,24 +141,6 @@ static void checkAndTransfer() {
 	transfer(process);
 }
 
-int checkandDecrement() {
-	for(int i = 0; i < nextProcessId - 3; i++) { //-next -clock -idle
-		if(processes[i].notified) { //the process got the notify before timeout
-			processes[i].counter = -1;
-		}
-		if(processes[i].counter >= 0){
-			processes[i].counter--;
-			if(processes[i].counter < 0){
-				//removes the process in question from the waitingList and
-				//adds it to the end of the entryList of the monitor
-				//when the timer expires
-				addLast(&monitors[processes[i].currentMonitor].entryList,
-				 removeProc(&monitors[processes[i].currentMonitor].waitingList, i));
-			}
-		}
-	}
-}
-
 void start(){
 	DPRINT("Starting kernel...");
 	if(isEmpty(&readyList))
@@ -326,6 +308,24 @@ void idleFunction() {
 	while(1){}
 }
 
+int checkandDecrement() {
+	for(int i = 0; i < nextProcessId - 3; i++) { //-next -clock -idle
+		if(processes[i].notified) { //the process got the notify before timeout
+			processes[i].counter = -1;
+		}
+		if(processes[i].counter >= 0){
+			processes[i].counter--;
+			if(processes[i].counter < 0){
+				//removes the process in question from the waitingList and
+				//adds it to the end of the entryList of the monitor
+				//when the timer expires
+				addLast(&getCurrentMonitor(i).entryList,
+				 removeProc(&getCurrentMonitor(i).waitingList, i));
+			}
+		}
+	}
+}
+
 void clockFunction() {
 	maskInterrupts();
 	init_clock();
@@ -333,14 +333,19 @@ void clockFunction() {
 		if(!isEmpty(&readyList)) {
 			Process p = processes[head(&readyList)].p;
 			iotransfer(p, 0);
-			checkandDecrement(); //done every ms ?!!!
+			checkandDecrement(); 
 		}
 		else iotransfer(processes[idleIndex].p, 0);
 		int q = removeHead(&readyList);
 		addLast(&readyList, q);
 	}
-	//TEST HERE for timedWait -> countdown from msec to 0
-	//timeslice each 20msec?
+	//timeslice each 20msec transfer(head(&readyList).p)????
+	if(slice % 20 != 0){
+		slice++;
+	} else {
+		slice = 0;
+		transfer(processes[head(&readyList)].p); // or iotransfer?!
+	}
 }
 
 
