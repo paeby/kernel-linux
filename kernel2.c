@@ -140,10 +140,8 @@ static void checkAndTransfer() {
 }
 
 void checkAndIncrement() {
-	for(int i = 0; i < nextProcessId - 3; i++) { //-next -clock -idle
-		if(processes[i].counter >= 0) {
-			processes[i].counter++;
-		}
+	for(int i = 0; i < nextProcessId - 3 && processes[i].counter >= 0; i++) { //-next -clock -idle
+		processes[i].counter++;
 	}
 }
 
@@ -320,20 +318,20 @@ void clockFunction() {
 		if(!isEmpty(&readyList)) {
 			Process p = processes[head(&readyList)].p;
 			iotransfer(p, 0);
-			checkAndIncrement();
+			checkAndIncrement(); //done every ms ?!!!
 		}
 		else iotransfer(processes[idleIndex].p, 0);
 		int q = removeHead(&readyList);
 		addLast(&readyList, q);
 	}
+	//TEST HERE for timedWait -> countdown from msec to 0
+	//timeslice each 20msec?
 }
 
 
 int timedWait(int msec) {
 	maskInterrupts();
 	int myID = head(&readyList);
-	processes[head(&readyList)].counter = 0;
-	/*activer compteur*/
 	
 	if(msec < 0) {
 		ERR("Negative time given in timedWait");
@@ -344,16 +342,17 @@ int timedWait(int msec) {
 	processes[myID].notified = 0;
 	if(msec == 0) wait();
 	else {
-		unsigned double left = (double) msec / 1000.0;
-		wait();
-		while((processes[myID].counter > 0) && (!processes[myID].notified)) {
+		processes[myID].counter = 0; /*activer compteur*/
+		while((processes[myID].counter <= msec) && (!processes[myID].notified)) {
 			//???????
 			//
 		}
+		processes[myID].counter = -1;
 		if(processes[myID].notified == 1) {
+			allowInterrupts();
 			return 1;
 		} else {
-
+			allowInterrupts();
 		}
 	}
 	/*FAUX: utiliser iotransfer() de clockFunction (1/msec) pour incrémenter
