@@ -112,6 +112,7 @@ static int removeProc(int* list, int proc) { //removes a specific process in a l
 * **********************************************************/
 
 void createProcess (void (*f)(), int stackSize) {
+	maskInterrupts();
 	if (nextProcessId == MAX_PROC){
 		ERR("Maximum number of processes reached!");
 		exit(1);
@@ -127,9 +128,11 @@ void createProcess (void (*f)(), int stackSize) {
 	processes[nextProcessId].monitors[0] = -1;
 	processes[nextProcessId].notified = 0;
 	processes[nextProcessId].counter = -1;
+	processes[nextProcessId].sleeping = 0;
 
 	addLast(&readyList, nextProcessId);
 	nextProcessId++;
+	allowInterrupts();
 }
 
 static void checkAndTransfer() {
@@ -142,6 +145,7 @@ static void checkAndTransfer() {
 }
 
 void start(){
+	maskInterrupts();
 	DPRINT("Starting kernel...");
 	if(isEmpty(&readyList))
 		printf("ERROR: readyList is empty.");
@@ -151,15 +155,19 @@ void start(){
 	createProcess(clockFunction, STACK_SIZE);
 	init_button();
 	transfer(processes[clockIndex].p);
+	allowInterrupts();
 }
 
 void yield(){
+	maskInterrupts();
 	int pid = removeHead(&readyList);
 	addLast(&readyList, pid);
 	checkAndTransfer();
+	allowInterrupts();
 }
 
 int createMonitor(){
+	maskInterrupts();
 	if (nextMonitorId == MAX_MONITORS){
 		ERR("Maximum number of monitors reached!\n");
 		exit(1);
@@ -169,6 +177,7 @@ int createMonitor(){
 	monitors[nextMonitorId].entryList = -1;
 	monitors[nextMonitorId].waitingList = -1;
 	return nextMonitorId++;
+	allowInterrupts();
 }
 
 static int getCurrentMonitor(int pid) {
@@ -176,6 +185,7 @@ static int getCurrentMonitor(int pid) {
 }
 
 void enterMonitor(int monitorID) {
+	maskInterrupts();
 	int myID = head(&readyList);
 
 	if (monitorID > nextMonitorId || monitorID < 0) {
@@ -206,9 +216,11 @@ void enterMonitor(int monitorID) {
 
 	/* push the new call onto the call stack */
 	processes[myID].monitors[++processes[myID].currentMonitor] = monitorID;
+	allowInterrupts();
 }
 
 void exitMonitor() {
+	maskInterrupts();
 	int myID = head(&readyList);
 	int myMonitor = getCurrentMonitor(myID);
 
@@ -231,9 +243,11 @@ void exitMonitor() {
 			monitors[myMonitor].takenBy = -1;
 		}
 	}
+	allowInterrupts();
 }
 
 void wait() {
+	maskInterrupts();
 	int myID = head(&readyList);
 	int myMonitor = getCurrentMonitor(myID);
 	int myTaken;
@@ -270,9 +284,11 @@ void wait() {
 
 	/* we're back, restore timesTaken */
 	monitors[myMonitor].timesTaken = myTaken;
+	allowInterrupts();
 }
 
 void notify() {
+	maskInterrupts();
 	int myID = head(&readyList);
 	int myMonitor = getCurrentMonitor(myID);
 
@@ -286,9 +302,11 @@ void notify() {
 		processes[pid].notified = 1;
 		addLast(&monitors[myMonitor].entryList, pid);
 	}
+	allowInterrupts();
 }
 
 void notifyAll() {
+	maskInterrupts();
 	int myID = head(&readyList);
 	int myMonitor = getCurrentMonitor(myID);
 
@@ -302,6 +320,7 @@ void notifyAll() {
 		processes[pid].notified = 1;
 		addLast(&monitors[myMonitor].entryList, pid);
 	}
+	allowInterrupts();
 }
 
 void idleFunction() {
@@ -310,17 +329,23 @@ void idleFunction() {
 
 int checkandDecrement() {
 	for(int i = 0; i < nextProcessId - 3; i++) { //-next -clock -idle
-		if(processes[i].notified) { //the process got the notify before timeout
-			processes[i].counter = -1;
+		ProcessDescriptor proc = processes[i]; 
+		if(proc.notified) { //the process got the notify before timeout
+			proc.counter = -1;
 		}
-		if(processes[i].counter >= 0){
-			processes[i].counter--;
-			if(processes[i].counter < 0){
+		if(proc.counter >= 0){
+			proc.counter--;
+			if(proc.counter < 0){
 				//removes the process in question from the waitingList and
 				//adds it to the end of the entryList of the monitor
 				//when the timer expires
+				if(!proc.sleeping)
 				addLast(&getCurrentMonitor(i).entryList,
 				 removeProc(&getCurrentMonitor(i).waitingList, i));
+				else {
+					proc.sleeping = 0;
+					addLast(&readyList ,i);
+				}
 			}
 		}
 	}
@@ -377,7 +402,9 @@ int timedWait(int msec) {
 
 void sleep(int time) { //blocking or transfer()
 	maskInterrupts();
-	process[head(&readyList)].counter = time;
+	int processId = removeHead(&readyList);
+	processes[processId].counter = time;
+	processes[processId].sleeping = 1;
 	allowInterrupts();
 }
 
