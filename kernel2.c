@@ -27,6 +27,7 @@ typedef struct {
 	int monitors[MAX_MONITORS + 1]; /* used for nested calls; monitors[0] is always -1 */
 	int notified; // flag that tracks whether the process has been notified or not. Initial value 0
 	int counter; // -1 if inactive, 0 if active and counting
+	int sleeping;
 } ProcessDescriptor; 
 
 typedef struct {
@@ -41,6 +42,10 @@ typedef struct {
 /* Pointer to the head of the ready list */
 static int readyList = -1;
 
+/* Pointer to the head of the sleeping list */
+static int sleepingList[MAX_PROC];
+static int nextSleeper = 0;
+
 /* List of process descriptors */
 ProcessDescriptor processes[MAX_PROC];
 static int nextProcessId = 0;
@@ -51,6 +56,7 @@ static int nextMonitorId = 0;
 
 static int idleIndex;
 static int clockIndex;
+static int slice = 0;
 
 /*************** Functions for process list manipulation **********/
 
@@ -105,6 +111,16 @@ static int removeProc(int* list, int proc) { //removes a specific process in a l
 	else return removeHead(&processes[*list].next);
 }
 
+static void addSleeper(int proc) {
+	if(nextSleeper < MAX_PROC){
+		sleepingList[nextSleeper++] = int proc;
+	}
+}
+
+static void removeSleeper(int proc) {
+
+}
+
 /***********************************************************
  ***********************************************************
                     Kernel functions
@@ -112,7 +128,6 @@ static int removeProc(int* list, int proc) { //removes a specific process in a l
 * **********************************************************/
 
 void createProcess (void (*f)(), int stackSize) {
-	maskInterrupts();
 	if (nextProcessId == MAX_PROC){
 		ERR("Maximum number of processes reached!");
 		exit(1);
@@ -132,7 +147,6 @@ void createProcess (void (*f)(), int stackSize) {
 
 	addLast(&readyList, nextProcessId);
 	nextProcessId++;
-	allowInterrupts();
 }
 
 static void checkAndTransfer() {
@@ -145,7 +159,6 @@ static void checkAndTransfer() {
 }
 
 void start(){
-	maskInterrupts();
 	DPRINT("Starting kernel...");
 	if(isEmpty(&readyList))
 		printf("ERROR: readyList is empty.");
@@ -155,7 +168,6 @@ void start(){
 	createProcess(clockFunction, STACK_SIZE);
 	init_button();
 	transfer(processes[clockIndex].p);
-	allowInterrupts();
 }
 
 void yield(){
@@ -329,6 +341,7 @@ void idleFunction() {
 
 int checkandDecrement() {
 	for(int i = 0; i < nextProcessId - 3; i++) { //-next -clock -idle
+	while(!isEmpty(&sleepingList))
 		ProcessDescriptor proc = processes[i]; 
 		if(proc.notified) { //the process got the notify before timeout
 			proc.counter = -1;
@@ -340,8 +353,8 @@ int checkandDecrement() {
 				//adds it to the end of the entryList of the monitor
 				//when the timer expires
 				if(!proc.sleeping)
-				addLast(&getCurrentMonitor(i).entryList,
-				 removeProc(&getCurrentMonitor(i).waitingList, i));
+				addLast(&monitors[getCurrentMonitor(i)].entryList,
+				 removeProc(&monitors[getCurrentMonitor(i)].waitingList, i));
 				else {
 					proc.sleeping = 0;
 					addLast(&readyList ,i);
@@ -361,16 +374,17 @@ void clockFunction() {
 			checkandDecrement(); 
 		}
 		else iotransfer(processes[idleIndex].p, 0);
-		int q = removeHead(&readyList);
-		addLast(&readyList, q);
+
+		if(slice % 20 != 0){
+			slice++;
+		} else {
+			slice = 0;
+			int q = removeHead(&readyList);
+			addLast(&readyList, q);
+		}
 	}
-	//timeslice each 20msec transfer(head(&readyList).p)????
-	if(slice % 20 != 0){
-		slice++;
-	} else {
-		slice = 0;
-		transfer(processes[head(&readyList)].p); // or iotransfer?!
-	}
+
+
 }
 
 
@@ -387,16 +401,17 @@ int timedWait(int msec) {
 	if(msec == 0) wait();
 	else {
 		processes[myID].counter = msec; /*activate counter*/
+		//addLast(&sleepingList, myID);
 		wait(); //real start of the waiting and countdown
-		}
-		processes[myID].counter = -1;
-		if(processes[myID].notified == 1) {
-			allowInterrupts();
-			return 1;
-		} else {
-			allowInterrupts();
-			return 0;
-		}
+	}
+
+	processes[myID].counter = -1;
+	if(processes[myID].notified == 1) {
+		allowInterrupts();
+		return 1;
+	} else {
+		allowInterrupts();
+		return 0;
 	}
 }
 
@@ -404,6 +419,7 @@ void sleep(int time) { //blocking or transfer()
 	maskInterrupts();
 	int processId = removeHead(&readyList);
 	processes[processId].counter = time;
+	//addLast(&sleepingList, processId);
 	processes[processId].sleeping = 1;
 	allowInterrupts();
 }
