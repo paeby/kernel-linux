@@ -99,7 +99,7 @@ static int isEmpty(int* list) {
 	return *list < 0;
 }
 
-static int removeProc(int* list, int proc) {
+static int removeProc(int* list, int proc) { //removes a specific process in a list
 
 }
 
@@ -139,9 +139,9 @@ static void checkAndTransfer() {
 	transfer(process);
 }
 
-void checkAndIncrement() {
+void checkandDecrement() {
 	for(int i = 0; i < nextProcessId - 3 && processes[i].counter >= 0; i++) { //-next -clock -idle
-		processes[i].counter++;
+		processes[i].counter--;
 	}
 }
 
@@ -153,6 +153,7 @@ void start(){
 	createProcess(idleFunction, STACK_SIZE);
 	clockIndex = nextProcessId;
 	createProcess(clockFunction, STACK_SIZE);
+	init_button();
 	transfer(processes[clockIndex].p);
 }
 
@@ -318,7 +319,7 @@ void clockFunction() {
 		if(!isEmpty(&readyList)) {
 			Process p = processes[head(&readyList)].p;
 			iotransfer(p, 0);
-			checkAndIncrement(); //done every ms ?!!!
+			checkandDecrement(); //done every ms ?!!!
 		}
 		else iotransfer(processes[idleIndex].p, 0);
 		int q = removeHead(&readyList);
@@ -338,11 +339,11 @@ int timedWait(int msec) {
 		exit(1);
 	}
 
-	int myMonitor = getCurrentMonitor();
+	int myMonitor = getCurrentMonitor(myID);
 	processes[myID].notified = 0;
 	if(msec == 0) wait();
 	else {
-		processes[myID].counter = 0; /*activer compteur*/
+		processes[myID].counter = msec; /*activer compteur*/
 		while((processes[myID].counter <= msec) && (!processes[myID].notified)) {
 			//???????
 			//
