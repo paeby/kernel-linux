@@ -100,7 +100,9 @@ static int isEmpty(int* list) {
 }
 
 static int removeProc(int* list, int proc) { //removes a specific process in a list
-
+	if(processes[*list].next != proc)
+		removeProc(&processes[*list].next, proc);
+	else return removeHead(&processes[*list].next);
 }
 
 /***********************************************************
@@ -139,9 +141,21 @@ static void checkAndTransfer() {
 	transfer(process);
 }
 
-void checkandDecrement() {
-	for(int i = 0; i < nextProcessId - 3 && processes[i].counter >= 0; i++) { //-next -clock -idle
-		processes[i].counter--;
+int checkandDecrement() {
+	for(int i = 0; i < nextProcessId - 3; i++) { //-next -clock -idle
+		if(processes[i].notified) { //the process got the notify before timeout
+			processes[i].counter = -1;
+		}
+		if(processes[i].counter >= 0){
+			processes[i].counter--;
+			if(processes[i].counter < 0){
+				//removes the process in question from the waitingList and
+				//adds it to the end of the entryList of the monitor
+				//when the timer expires
+				addLast(&monitors[processes[i].currentMonitor].entryList,
+				 removeProc(&monitors[processes[i].currentMonitor].waitingList, i));
+			}
+		}
 	}
 }
 
@@ -282,8 +296,8 @@ void notify() {
 
 	if (myMonitor < 0) {
 		ERRA("Process %d called notify outside of a monitor.", myID);
-		exit(1)
-;	}
+		exit(1);	
+	}
 
 	if (!isEmpty(&(monitors[myMonitor].waitingList))) {
 		int pid = removeHead(&monitors[myMonitor].waitingList);
@@ -339,14 +353,11 @@ int timedWait(int msec) {
 		exit(1);
 	}
 
-	int myMonitor = getCurrentMonitor(myID);
 	processes[myID].notified = 0;
 	if(msec == 0) wait();
 	else {
-		processes[myID].counter = msec; /*activer compteur*/
-		while((processes[myID].counter <= msec) && (!processes[myID].notified)) {
-			//???????
-			//
+		processes[myID].counter = msec; /*activate counter*/
+		wait(); //real start of the waiting and countdown
 		}
 		processes[myID].counter = -1;
 		if(processes[myID].notified == 1) {
@@ -354,14 +365,15 @@ int timedWait(int msec) {
 			return 1;
 		} else {
 			allowInterrupts();
+			return 0;
 		}
 	}
-	/*FAUX: utiliser iotransfer() de clockFunction (1/msec) pour incrémenter
-	compteurs de processus qui sont actifs (à 0)*/
 }
 
-void sleep(int time) {
-
+void sleep(int time) { //blocking or transfer()
+	maskInterrupts();
+	process[head(&readyList)].counter = time;
+	allowInterrupts();
 }
 
 void waitInterrupt(int peripherique) {
